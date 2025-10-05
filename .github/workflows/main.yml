@@ -1,18 +1,19 @@
-name: Build & Deploy ReVanced
+name: Build & Deploy ReVanced APK
 
 on:
   push:
     branches:
       - main
   workflow_dispatch:
-  # Optional: run daily at 2:00 UTC
   schedule:
-    - cron: '0 2 * * *'
+    - cron: '0 2 * * *'  # Daily at 2:00 UTC
 
 jobs:
   build:
     name: Build APK
     runs-on: ubuntu-latest
+    env:
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk
 
     steps:
       - name: Checkout repository
@@ -24,7 +25,7 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Cache Gradle dependencies
+      - name: Cache Gradle
         uses: actions/cache@v3
         with:
           path: |
@@ -34,17 +35,30 @@ jobs:
           restore-keys: |
             gradle-cache-${{ runner.os }}-
 
-      - name: Build APK
-        run: ./gradlew assembleRelease   # Replace with your exact gradle build task
+      - name: Prepare signing keys
+        run: |
+          mkdir -p ~/.signing
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ~/.signing/keystore.jks
 
-      - name: Collect APK artifact
+      - name: Build APK with flavor and patches
+        run: |
+          ./gradlew clean
+          ./gradlew assembleRelease \
+            -PflavorName=vanilla \
+            -PapplyPatches=true \
+            -PkeystorePath=$HOME/.signing/keystore.jks \
+            -PkeystorePassword="${{ secrets.KEYSTORE_PASSWORD }}" \
+            -PkeyAlias="${{ secrets.KEY_ALIAS }}" \
+            -PkeyPassword="${{ secrets.KEY_PASSWORD }}"
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v3
         with:
           name: ReVanced-Release-apk
           path: app/build/outputs/apk/release/*.apk
 
   deploy:
-    name: Deploy Release
+    name: Deploy APK
     needs: build
     runs-on: ubuntu-latest
     env:
